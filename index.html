@@ -187,7 +187,7 @@
 
     const timers = new Map();
     tbody.querySelectorAll("input").forEach(inp=>{
-      inp.addEventListener("input",(e)=>{
+      inp.addEventListener("change",(e)=>{
         const tr = e.target.closest("tr");
         const idx = Number(tr.dataset.idx);
         const col = e.target.dataset.col;
@@ -196,7 +196,7 @@
         const id = state[key][idx].ID;
         if(timers.get(id)) clearTimeout(timers.get(id));
         timers.set(id, setTimeout(async ()=>{
-          try{ await saveRow(key, state[key][idx]); setStatus("تم الحفظ ✅"); }
+          try{ await saveRow(key, state[key][idx]); setStatus("تم الحفظ ✅ (بعد الخروج من الخانة)"); }
           catch(err){ showErr("Save error:\n"+(err?.message||err)); alert("خطأ في الحفظ: "+(err?.message||err)); }
         }, 450));
       });

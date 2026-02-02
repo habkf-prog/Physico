@@ -17,7 +17,7 @@
     :root{ --bg:#0b1220; --card:#111a2e; --muted:#9db0d0; --text:#e9f0ff; --line:#223154; }
     *{ box-sizing:border-box; }
     body{ margin:0; font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial; background:var(--bg); color:var(--text); }
-    header{ position:sticky; top:0; background:rgba(11,18,32,.9); backdrop-filter: blur(10px); border-bottom:1px solid var(--line); }
+    header{ position:sticky; top:0; background:rgba(11,18,32,.9); backdrop-filter: blur(10px); border-bottom:1px solid var(--line); z-index:50; }
     .wrap{ max-width:1200px; margin:0 auto; padding:16px; }
     .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; }
     .row{ display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
@@ -30,20 +30,22 @@
     .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     @media (max-width: 980px){ .grid2{ grid-template-columns:1fr; } }
 
-    /* ✅ Scroll-friendly tables (no overlap) */
+    /* ✅ Scroll-friendly tables */
     .tableWrap{ max-height: 430px; overflow:auto; -webkit-overflow-scrolling: touch; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
     table{ border-collapse:collapse; font-size:13px; width:max-content; min-width:100%; }
     th, td{ border-bottom:1px solid var(--line); padding:8px; text-align:right; white-space:nowrap; }
-    th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
+    th{ position:sticky; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; z-index:5; }
+    thead tr.group th{ top:0; background:rgba(17,26,46,.98); font-size:12px; color:#bcd3ff; }
+    thead tr.cols th{ top:28px; }
     td input{ background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; min-width:110px; }
 
     /* ✅ توسيع عمود pH فقط قليلاً - Brutes */
-    #tblBrutes th:nth-child(12), #tblBrutes td:nth-child(12){ min-width: 92px; width: 92px; }
-    #tblBrutes td:nth-child(12) input{ min-width: 86px; }
+    #tblBrutes thead tr.cols th:nth-child(12), #tblBrutes tbody td:nth-child(12){ min-width: 92px; width: 92px; }
+    #tblBrutes tbody td:nth-child(12) input{ min-width: 86px; }
 
     /* ✅ توسيع عمود pH فقط قليلاً - Traitées */
-    #tblTraitees th:nth-child(12), #tblTraitees td:nth-child(12){ min-width: 92px; width: 92px; }
-    #tblTraitees td:nth-child(12) input{ min-width: 86px; }
+    #tblTraitees thead tr.cols th:nth-child(12), #tblTraitees tbody td:nth-child(12){ min-width: 92px; width: 92px; }
+    #tblTraitees tbody td:nth-child(12) input{ min-width: 86px; }
 
     #errBox{ display:none; white-space:pre-wrap; border:1px solid rgba(255,100,100,.45); background:rgba(255,100,100,.10);
              padding:10px 12px; border-radius:12px; color:#ffd1d1; margin-top:10px; direction:ltr; text-align:left;
@@ -100,9 +102,9 @@
         <span class="muted right" id="status"></span>
       </div>
       <div class="muted" style="margin-top:8px;">
-        - الحذف غير موجود (Rules تمنع delete).<br/>
-        - الحفظ يتم بعد الخروج من الخانة (مناسب للهاتف).<br/>
-        - ملاحظة: تم حذف عمود <span class="pill">Aluminium</span> من جدول Brutes فقط.
+        - هذه العناوين (Micropolluants / Chimie... / Structure...) هي <b>عناوين مجموعات</b> في الصف العلوي من Excel (خلايا مدمجة)، وليست أعمدة إدخال.<br/>
+        - تم إظهارها الآن كرأس إضافي فوق الأعمدة داخل الموقع. (وفي التصدير يتم إنشاؤها أيضًا).<br/>
+        - Brutes: بدون عمود <span class="pill">Aluminium</span> حسب طلبك.
       </div>
     </div>
 
@@ -150,13 +152,15 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
 
-  // ✅ Headers from your Excel template
+  // Headers from your Excel template
   const BR_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse"];
   const TR_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
+  const BR_GROUPS = [{"label": "", "span": 5}, {"label": "Structure de l'eau", "span": 9}, {"label": "Chimie de l'eau (Cations)", "span": 6}, {"label": "Chimie de l'eau (Anions)", "span": 7}, {"label": "Micropolluants", "span": 2}];
+  const TR_GROUPS = [{"label": "", "span": 5}, {"label": "Structure de l'eau", "span": 9}, {"label": "Chimie de l'eau (Cations)", "span": 6}, {"label": "Chimie de l'eau (Anions)", "span": 7}, {"label": "Micropolluants", "span": 3}];
 
   // Fields stored in Firestore (ID + headers without "N°=")
-  const BR_FIELDS = ["ID", ...BR_HEADERS.filter(h => h !== "N°=")];
-  const TR_FIELDS = ["ID", ...TR_HEADERS.filter(h => h !== "N°=")];
+  const BR_FIELDS = ["ID", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse"];
+  const TR_FIELDS = ["ID", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
 
   const SYNC_COLS = ["Point de prélevement","Centre","Communes","Date"];
 
@@ -181,11 +185,19 @@
   function sortById(a,b){ const pa=a.ID?.[0]??"", pb=b.ID?.[0]??""; if(pa!==pb) return pa.localeCompare(pb); return (extractNum(a.ID)||0)-(extractNum(b.ID)||0); }
   function fieldForHeader(h){ return (h === "N°=") ? "ID" : h; }
 
-  function render(tableEl, headers, rows, key, fields){
+  function render(tableEl, headers, groups, rows, key, fields){
     const thead = tableEl.querySelector("thead");
     const tbody = tableEl.querySelector("tbody");
 
-    thead.innerHTML = `<tr>${headers.map(h=>`<th>${esc(h)}</th>`).join("")}</tr>`;
+    const groupRow = `<tr class="group">` + groups.map(g => {
+      const label = g.label ? esc(g.label) : "&nbsp;";
+      return `<th colspan="${g.span}">${label}</th>`;
+    }).join("") + `</tr>`;
+
+    const colsRow = `<tr class="cols">` + headers.map(h => `<th>${esc(h)}</th>`).join("") + `</tr>`;
+
+    thead.innerHTML = groupRow + colsRow;
+
     tbody.innerHTML = rows.map((r,i)=>`
       <tr data-idx="${i}">
         ${
@@ -220,8 +232,8 @@
   }
 
   function rerender(){
-    render($("tblBrutes"), BR_HEADERS, state.brutes, "brutes", BR_FIELDS);
-    render($("tblTraitees"), TR_HEADERS, state.traitees, "traitees", TR_FIELDS);
+    render($("tblBrutes"), BR_HEADERS, BR_GROUPS, state.brutes, "brutes", BR_FIELDS);
+    render($("tblTraitees"), TR_HEADERS, TR_GROUPS, state.traitees, "traitees", TR_FIELDS);
   }
 
   async function saveRow(which, row, fields){
@@ -297,26 +309,45 @@
     }catch(err){ showErr("Sync\n"+(err?.message||err)); alert("خطأ مزامنة: "+(err?.message||err)); }
   });
 
-  // Export: Brutes without Aluminium, Traitées with Aluminium (as in template)
+  // Build group row values expanded to columns + merges for Excel export
+  function buildGroupRow(groups){
+    const row = [];
+    const merges = [];
+    let c = 0;
+    for(const g of groups){
+      row.push(g.label || "");
+      for(let i=1;i<g.span;i++) row.push("");
+      if(g.span > 1){
+        merges.push({ s: { r:0, c:c }, e: { r:0, c:c+g.span-1 } });
+      }
+      c += g.span;
+    }
+    return { row, merges };
+  }
+
+  function sheetFrom(headers, groups, rows){
+    const { row:groupRow, merges } = buildGroupRow(groups);
+    const headerRow = headers.slice();
+    const dataRows = rows.map(r => headers.map(h => {
+      const f = fieldForHeader(h);
+      return (f==="ID") ? r.ID : (r[f] ?? "");
+    }));
+    const aoa = [groupRow, headerRow, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws["!merges"] = merges;
+    return ws;
+  }
+
   $("btnExport").addEventListener("click", ()=>{
     if(typeof XLSX==="undefined") return alert("XLSX غير متاح");
     const wb = XLSX.utils.book_new();
-
-    const toSheetRows = (headers, rows) => rows.map(r => {
-      const o = {};
-      for(const h of headers){ const f = fieldForHeader(h); o[h] = (f==="ID") ? r.ID : (r[f] ?? ""); }
-      return o;
-    });
-
-    const wsB = XLSX.utils.json_to_sheet(toSheetRows(BR_HEADERS, state.brutes), { header: BR_HEADERS });
-    const wsT = XLSX.utils.json_to_sheet(toSheetRows(TR_HEADERS, state.traitees), { header: TR_HEADERS });
-    XLSX.utils.book_append_sheet(wb, wsB, "Brutes");
-    XLSX.utils.book_append_sheet(wb, wsT, "Traitées");
+    XLSX.utils.book_append_sheet(wb, sheetFrom(BR_HEADERS, BR_GROUPS, state.brutes), "Brutes");
+    XLSX.utils.book_append_sheet(wb, sheetFrom(TR_HEADERS, TR_GROUPS, state.traitees), "Traitées");
     const stamp = new Date().toISOString().slice(0,10);
     XLSX.writeFile(wb, `Resultats_Physico_Chimique_${stamp}.xlsx`);
   });
 
-  // Import base: reads sheets; for Brutes ignores Aluminium even if present
+  // Import base: reads sheets; Brutes ignores Aluminium (not stored)
   $("btnImportBase").addEventListener("click", ()=>{ $("fileImport").value=""; $("fileImport").click(); });
 
   function toIsoDate(v){
@@ -336,11 +367,13 @@
       const wb = XLSX.read(buf, { type:"array", cellDates:true });
       for(const s of ["Brutes","Traitées"]) if(!wb.Sheets[s]) throw new Error("Sheet missing: "+s);
 
-      const importSheet = async (sheetName, collectionName, headers, fields)=>{
+      const importSheet = async (sheetName, collectionName, fields)=>{
         const ws = wb.Sheets[sheetName];
         const aoa = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:"" });
+
+        // find header row containing N°= (skip group row)
         let headerRowIdx = -1;
-        for(let i=0; i<Math.min(20, aoa.length); i++){ 
+        for(let i=0; i<Math.min(30, aoa.length); i++){ 
           const row = (aoa[i]||[]).map(x=>String(x||"").trim());
           if(row.includes("N°=") || row.includes("N°")){ headerRowIdx=i; break; }
         }
@@ -361,7 +394,6 @@
           const docRow = { ID: finalId };
           for(const f of fields){ 
             if(f==="ID") continue;
-            // Read from excel column with same name if present
             const idx = idxByHeader.get(f);
             let v = (idx===undefined) ? "" : row[idx];
             if(f==="Date") v = toIsoDate(v);
@@ -383,8 +415,9 @@
         }
       };
 
-      await importSheet("Brutes","brutes", BR_HEADERS, BR_FIELDS);
-      await importSheet("Traitées","traitees", TR_HEADERS, TR_FIELDS);
+      await importSheet("Brutes","brutes", BR_FIELDS);
+      await importSheet("Traitées","traitees", TR_FIELDS);
+
       setStatus("تم الاستيراد ✅");
       alert("✅ تم استيراد ملف Excel بنجاح.\nإذا كانت بيانات قديمة بنفس ID سيتم تحديثها.");
     }catch(err){ showErr("Import error\n" + (err?.message || err)); alert("خطأ في الاستيراد: " + (err?.message || err)); setStatus("فشل ❌"); }

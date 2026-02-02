@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Résultats Physico Chimique - إدخال + مزامنة</title>
+  <style>
+    :root { --bg:#0b1220; --card:#111a2e; --muted:#9db0d0; --text:#e9f0ff; --line:#223154; --accent:#6aa6ff; --danger:#ff6a6a; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial; background:var(--bg); color:var(--text); }
+    header { padding:18px 16px; border-bottom:1px solid var(--line); position:sticky; top:0; background:rgba(11,18,32,.9); backdrop-filter: blur(10px); }
+    header h1 { margin:0 0 6px; font-size:18px; }
+    header .sub { color:var(--muted); font-size:13px; }
+    .wrap { max-width:1200px; margin:0 auto; padding:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    button {
+      background:#1a2a4d; border:1px solid var(--line); color:var(--text);
+      padding:10px 12px; border-radius:10px; cursor:pointer; font-weight:600;
+    }
+    button:hover { border-color: rgba(106,166,255,.5); }
+    button.primary { background:rgba(106,166,255,.15); border-color: rgba(106,166,255,.35); }
+    button.danger { background:rgba(255,106,106,.12); border-color: rgba(255,106,106,.35); }
+    input, select {
+      background:#0e1730; border:1px solid var(--line); color:var(--text);
+      padding:10px 12px; border-radius:10px; outline:none;
+    }
+    input::placeholder { color:#7f93b8; }
+    .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    @media (max-width: 980px){ .grid2 { grid-template-columns: 1fr; } }
+    h2 { margin:0 0 10px; font-size:16px; }
+    .muted { color:var(--muted); font-size:12px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px; vertical-align:middle; text-align:right; }
+    th { color:#cfe0ff; font-weight:700; position:sticky; top:0; background:rgba(17,26,46,.95); }
+    td input { width:100%; box-sizing:border-box; }
+    .tableWrap { max-height: 430px; overflow:auto; border-radius:12px; border:1px solid var(--line); }
+    .tag { display:inline-block; font-size:12px; padding:4px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); }
+    .right { margin-inline-start:auto; }
+    .split { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .note { line-height:1.7; }
+    .file { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .small { font-size:12px; color:var(--muted); }
+  </style>
+
+  <!-- Excel import/export (اختياري): SheetJS -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+
+<body>
+<header>
+  <div class="wrap">
+    <div class="row">
+      <div>
+        <h1>إدخال النتائج + مزامنة (Brutes ↔ Traitées)</h1>
+        <div class="sub">إضافة/تعديل صفوف + مزامنة الأعمدة الأساسية من B# إلى T# لنفس الرقم — حفظ تلقائي محليًا</div>
+      </div>
+      <div class="right controls">
+        <button class="primary" id="btnSync">مزامنة الأعمدة الأساسية (Brutes → Traitées)</button>
+        <button id="btnSave">حفظ الآن</button>
+        <button class="danger" id="btnReset">مسح البيانات المحلية</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:12px;">
+      <span class="tag">الأعمدة الأساسية للمزامنة: Point de prélevement, Centre, Communes, Date</span>
+      <span class="tag">IDs: Brutes = B1.. / Traitées = T1..</span>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <div class="file">
+        <strong>Excel (اختياري):</strong>
+        <input type="file" id="fileInput" accept=".xlsx,.xls" />
+        <button id="btnExport" class="primary">تصدير إلى Excel</button>
+        <span class="small">إذا لم ترغب في Excel، تجاهل هذا القسم وستعمل البيانات محليًا.</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="grid2">
+    <section class="card">
+      <div class="row">
+        <h2>Brutes</h2>
+        <div class="right split">
+          <button class="primary" id="addBrutes">+ إضافة صف</button>
+        </div>
+      </div>
+      <div class="muted note">اكتب القيم مباشرة داخل الخانات. زر المزامنة سينسخ الأعمدة الأساسية إلى Traitées لنفس الرقم.</div>
+      <div class="tableWrap" style="margin-top:10px;">
+        <table id="tblBrutes">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <h2>Traitées</h2>
+        <div class="right split">
+          <button class="primary" id="addTraitees">+ إضافة صف</button>
+        </div>
+      </div>
+      <div class="muted note">يمكنك إدخال/تعديل القيم. إذا كانت الأعمدة الأساسية فارغة، المزامنة ستملأها من Brutes.</div>
+      <div class="tableWrap" style="margin-top:10px;">
+        <table id="tblTraitees">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <strong>ملاحظات سريعة</strong>
+    <div class="muted note">
+      - الحفظ يتم في المتصفح (localStorage).<br/>
+      - للتشغيل على شبكة/سيرفر: ضع الملف index.html في أي استضافة بسيطة أو افتحه محليًا.<br/>
+      - إذا تريد “مزامنة مباشرة بين أجهزة متعددة” تحتاج Backend (Firebase/DB/API). أقدر أعطيك نسخة بذلك لو تحب.
+    </div>
+  </div>
+</main>
+
+<script>
+/** =========================
+ *  نموذج الأعمدة (عدّلها حسب ملفك)
+ *  ========================= */
+const COLS_BRUTES = ["ID","Point de prélevement","Centre","Communes","Date","Temp.","pH","Cond.","Turbidité"];
+const COLS_TRAITEES = ["ID","Point de prélevement","Centre","Communes","Date","Temp.","pH","Cond.","Turbidité"];
+
+/** =========================
+ *  الحالة + التخزين
+ *  ========================= */
+const LS_KEY = "physico_chimique_app_v1";
+
+let state = {
+  brutes: [
+    { "ID":"B1", "Point de prélevement":"", "Centre":"", "Communes":"", "Date":"", "Temp.":"", "pH":"", "Cond.":"", "Turbidité":"" }
+  ],
+  traitees: [
+    { "ID":"T1", "Point de prélevement":"", "Centre":"", "Communes":"", "Date":"", "Temp.":"", "pH":"", "Cond.":"", "Turbidité":"" }
+  ]
+};
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed?.brutes && parsed?.traitees) state = parsed;
+  }catch(e){}
+}
+function saveState(){
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+}
+function resetState(){
+  localStorage.removeItem(LS_KEY);
+  state = { brutes: [], traitees: [] };
+}
+
+/** =========================
+ *  أدوات IDs
+ *  ========================= */
+function extractNum(id){
+  const m = String(id||"").match(/^[BT](\\d+)$/i);
+  return m ? Number(m[1]) : null;
+}
+function nextId(prefix, arr){
+  let max = 0;
+  for(const row of arr){
+    const n = extractNum(row.ID);
+    if(n && String(row.ID).toUpperCase().startsWith(prefix)) max = Math.max(max, n);
+  }
+  return prefix + String(max + 1);
+}
+
+/** =========================
+ *  بناء الجداول
+ *  ========================= */
+function renderTable(tableEl, cols, rows, sheetKey){
+  const thead = tableEl.querySelector("thead");
+  const tbody = tableEl.querySelector("tbody");
+
+  thead.innerHTML = `
+    <tr>
+      ${cols.map(c => `<th>${escapeHtml(c)}</th>`).join("")}
+      <th>إجراءات</th>
+    </tr>
+  `;
+
+  tbody.innerHTML = rows.map((row, idx) => {
+    return `
+      <tr data-idx="${idx}">
+        ${cols.map(col => {
+          const v = row[col] ?? "";
+          const readonly = (col === "ID") ? "readonly" : "";
+          const type = (col === "Date") ? "date" : "text";
+          return `<td><input ${readonly} type="${type}" value="${escapeAttr(v)}" data-col="${escapeAttr(col)}" /></td>`;
+        }).join("")}
+        <td><button class="danger" data-action="del">حذف</button></td>
+      </tr>
+    `;
+  }).join("");
+
+  tbody.querySelectorAll("input").forEach(inp => {
+    inp.addEventListener("input", (e) => {
+      const tr = e.target.closest("tr");
+      const i = Number(tr.dataset.idx);
+      const col = e.target.dataset.col;
+      state[sheetKey][i][col] = e.target.value;
+      saveState();
+    });
+  });
+
+  tbody.querySelectorAll('button[data-action="del"]').forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      const i = Number(tr.dataset.idx);
+      state[sheetKey].splice(i, 1);
+      saveState();
+      rerenderAll();
+    });
+  });
+}
+
+function rerenderAll(){
+  renderTable(document.getElementById("tblBrutes"), COLS_BRUTES, state.brutes, "brutes");
+  renderTable(document.getElementById("tblTraitees"), COLS_TRAITEES, state.traitees, "traitees");
+}
+
+/** =========================
+ *  مزامنة (Brutes -> Traitées)
+ *  ========================= */
+function syncBrutesToTraitees(){
+  const mapT = new Map();
+  for(const row of state.traitees){
+    mapT.set(String(row.ID), row);
+  }
+
+  for(const b of state.brutes){
+    const n = extractNum(b.ID);
+    if(!n) continue;
+    const tid = "T" + n;
+    let t = mapT.get(tid);
+    if(!t){
+      t = { "ID": tid };
+      for(const c of COLS_TRAITEES){ if(!(c in t)) t[c] = ""; }
+      state.traitees.push(t);
+      mapT.set(tid, t);
+    }
+
+    for(const col of ["Point de prélevement","Centre","Communes","Date"]){
+      const val = b[col] ?? "";
+      if(val !== "") t[col] = val;
+    }
+  }
+
+  saveState();
+  rerenderAll();
+  alert("تمت المزامنة ✅");
+}
+
+/** =========================
+ *  إضافة صفوف
+ *  ========================= */
+function addRow(sheetKey){
+  const isBrutes = sheetKey === "brutes";
+  const cols = isBrutes ? COLS_BRUTES : COLS_TRAITEES;
+  const prefix = isBrutes ? "B" : "T";
+  const id = nextId(prefix, state[sheetKey]);
+
+  const row = {};
+  for(const c of cols) row[c] = "";
+  row.ID = id;
+
+  state[sheetKey].push(row);
+  saveState();
+  rerenderAll();
+}
+
+/** =========================
+ *  Excel import/export (SheetJS)
+ *  ========================= */
+function exportToExcel(){
+  if(typeof XLSX === "undefined"){
+    alert("مكتبة XLSX غير متاحة. تأكد من الاتصال أو احذف قسم Excel.");
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+
+  const wsB = XLSX.utils.json_to_sheet(state.brutes, { header: COLS_BRUTES });
+  const wsT = XLSX.utils.json_to_sheet(state.traitees, { header: COLS_TRAITEES });
+
+  XLSX.utils.book_append_sheet(wb, wsB, "Brutes");
+  XLSX.utils.book_append_sheet(wb, wsT, "Traitées");
+
+  XLSX.writeFile(wb, "Resultats_Physico_Chimique_synced.xlsx");
+}
+
+function importFromExcel(file){
+  if(typeof XLSX === "undefined"){
+    alert("مكتبة XLSX غير متاحة. تأكد من الاتصال أو احذف قسم Excel.");
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target.result);
+    const wb = XLSX.read(data, { type: "array" });
+
+    function sheetToRows(name, cols){
+      const ws = wb.Sheets[name];
+      if(!ws) return [];
+      const json = XLSX.utils.sheet_to_json(ws, { defval:"" });
+      return json.map(r => {
+        const row = {};
+        for(const c of cols) row[c] = (r[c] ?? "");
+        if(!row.ID && (r.ID || r.Id || r.id)) row.ID = r.ID || r.Id || r.id;
+        return row;
+      }).filter(r => r.ID);
+    }
+
+    state.brutes = sheetToRows("Brutes", COLS_BRUTES);
+    state.traitees = sheetToRows("Traitées", COLS_TRAITEES);
+
+    saveState();
+    rerenderAll();
+    alert("تم الاستيراد ✅");
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/** =========================
+ *  حماية بسيطة
+ *  ========================= */
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+}
+function escapeAttr(s){ return escapeHtml(s); }
+
+/** =========================
+ *  ربط الأزرار
+ *  ========================= */
+loadState();
+rerenderAll();
+
+document.getElementById("btnSync").addEventListener("click", syncBrutesToTraitees);
+document.getElementById("btnSave").addEventListener("click", () => { saveState(); alert("تم الحفظ ✅"); });
+document.getElementById("btnReset").addEventListener("click", () => {
+  if(confirm("هل تريد مسح كل البيانات المحلية؟")){ resetState(); saveState(); rerenderAll(); }
+});
+document.getElementById("addBrutes").addEventListener("click", () => addRow("brutes"));
+document.getElementById("addTraitees").addEventListener("click", () => addRow("traitees"));
+
+document.getElementById("btnExport").addEventListener("click", exportToExcel);
+document.getElementById("fileInput").addEventListener("change", (e) => {
+  const f = e.target.files?.[0];
+  if(f) importFromExcel(f);
+});
+</script>
+</body>
+</html>

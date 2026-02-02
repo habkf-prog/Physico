@@ -311,14 +311,16 @@
 
   // Build group row values expanded to columns + merges for Excel export
   function buildGroupRow(groups){
+    // بعض التطبيقات لا تُظهر الخلايا المدمجة بشكل صحيح.
+    // لذلك نكرر اسم المجموعة في كل الأعمدة التابعة لها (مع الحفاظ على الدمج لمن يدعمه).
     const row = [];
     const merges = [];
     let c = 0;
     for(const g of groups){
-      row.push(g.label || "");
-      for(let i=1;i<g.span;i++) row.push("");
+      const label = g.label || "";
+      for(let i=0;i<g.span;i++) row.push(label); // تكرار
       if(g.span > 1){
-        merges.push({ s: { r:0, c:c }, e: { r:0, c:c+g.span-1 } });
+        merges.push({ s:{ r:0, c:c }, e:{ r:0, c:c+g.span-1 } });
       }
       c += g.span;
     }

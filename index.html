@@ -29,15 +29,21 @@
     button:hover{ border-color: rgba(106,166,255,.5); }
     .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     @media (max-width: 980px){ .grid2{ grid-template-columns:1fr; } }
-    .tableWrap{ max-height: 430px; overflow:auto; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
-    table{ width:100%; border-collapse:collapse; font-size:13px; }
-    th, td{ border-bottom:1px solid var(--line); padding:8px; text-align:right; }
-    th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
-    td input{ width:100%; background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; }
 
-    /* ✅ توسيع عمود pH فقط قليلاً */
-    th:nth-child(12), td:nth-child(12){ min-width: 92px; width: 92px; }
-    td:nth-child(12) input{ min-width: 86px; }
+    /* ✅ Scroll-friendly tables (no overlap) */
+    .tableWrap{ max-height: 430px; overflow:auto; -webkit-overflow-scrolling: touch; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
+    table{ border-collapse:collapse; font-size:13px; width:max-content; min-width:100%; }
+    th, td{ border-bottom:1px solid var(--line); padding:8px; text-align:right; white-space:nowrap; }
+    th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
+    td input{ background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; min-width:110px; }
+
+    /* ✅ توسيع عمود pH فقط قليلاً - Brutes */
+    #tblBrutes th:nth-child(12), #tblBrutes td:nth-child(12){ min-width: 92px; width: 92px; }
+    #tblBrutes td:nth-child(12) input{ min-width: 86px; }
+
+    /* ✅ توسيع عمود pH فقط قليلاً - Traitées */
+    #tblTraitees th:nth-child(12), #tblTraitees td:nth-child(12){ min-width: 92px; width: 92px; }
+    #tblTraitees td:nth-child(12) input{ min-width: 86px; }
 
     #errBox{ display:none; white-space:pre-wrap; border:1px solid rgba(255,100,100,.45); background:rgba(255,100,100,.10);
              padding:10px 12px; border-radius:12px; color:#ffd1d1; margin-top:10px; direction:ltr; text-align:left;
@@ -50,7 +56,7 @@
   <div class="wrap row">
     <div>
       <div style="font-weight:900;">Physico Chimique (Firebase)</div>
-      <div class="muted">اعتماد ملف Excel كقالب إدخال (نفس الأعمدة) + Firestore + تسجيل دخول — (الكل يضيف/يعدل، بدون حذف)</div>
+      <div class="muted">اعتماد ملف Excel كقالب إدخال + Firestore + تسجيل دخول — (الكل يضيف/يعدل، بدون حذف)</div>
     </div>
     <div class="right row">
       <span class="pill" id="userPill" style="display:none;"></span>
@@ -96,7 +102,7 @@
       <div class="muted" style="margin-top:8px;">
         - الحذف غير موجود (Rules تمنع delete).<br/>
         - الحفظ يتم بعد الخروج من الخانة (مناسب للهاتف).<br/>
-        - الأعمدة مطابقة لملفك: <span class="pill">Brutes / Traitées</span>
+        - ملاحظة: تم حذف عمود <span class="pill">Aluminium</span> من جدول Brutes فقط.
       </div>
     </div>
 
@@ -128,8 +134,8 @@
   // show JS errors on screen
   const errBox = document.getElementById("errBox");
   function showErr(msg){ errBox.style.display="block"; errBox.textContent = msg; }
-  window.addEventListener("error", (e) => showErr("JS Error:\n" + (e.message || e.error || e)));
-  window.addEventListener("unhandledrejection", (e) => showErr("Unhandled Promise:\n" + (e.reason?.message || e.reason || e)));
+  window.addEventListener("error", (e) => showErr("JS Error\n" + (e.message || e.error || e)));
+  window.addEventListener("unhandledrejection", (e) => showErr("Unhandled Promise\n" + (e.reason?.message || e.reason || e)));
 
   // Firebase config
   const firebaseConfig = {
@@ -140,14 +146,18 @@
     messagingSenderId: "116753346541",
     appId: "1:116753346541:web:8c5d835f045577ddb381e4"
   };
-
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
 
   // ✅ Headers from your Excel template
-  const DISPLAY_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
-  const FIELDS = ["ID", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
+  const BR_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse"];
+  const TR_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
+
+  // Fields stored in Firestore (ID + headers without "N°=")
+  const BR_FIELDS = ["ID", ...BR_HEADERS.filter(h => h !== "N°=")];
+  const TR_FIELDS = ["ID", ...TR_HEADERS.filter(h => h !== "N°=")];
+
   const SYNC_COLS = ["Point de prélevement","Centre","Communes","Date"];
 
   let state = { brutes: [], traitees: [] };
@@ -156,44 +166,32 @@
   const $ = (id) => document.getElementById(id);
   function setStatus(s){ $("status").textContent = s || ""; }
 
-  function extractNum(id){
-    const m = String(id||"").match(/^[BT](\d+)$/i);
-    return m ? Number(m[1]) : null;
-  }
+  function extractNum(id){ const m = String(id||"").match(/^[BT](\d+)$/i); return m ? Number(m[1]) : null; }
   function nextId(prefix, arr){
     let max = 0;
-    for(const r of arr){
-      const n = extractNum(r.ID);
-      if(n && String(r.ID).toUpperCase().startsWith(prefix)) max = Math.max(max, n);
-    }
+    for(const r of arr){ const n = extractNum(r.ID); if(n && String(r.ID).toUpperCase().startsWith(prefix)) max = Math.max(max, n); }
     return prefix + String(max+1);
   }
-  function normalize(row){
-    const out = {};
-    out.ID = row.ID;
-    for(const f of FIELDS){ if(f!=="ID") out[f] = (row[f] ?? ""); }
+  function normalize(row, fields){
+    const out = {}; out.ID = row.ID;
+    for(const f of fields){ if(f !== "ID") out[f] = (row[f] ?? ""); }
     return out;
   }
   function esc(s){ return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
-  function sortById(a,b){
-    const pa = a.ID?.[0] ?? "", pb = b.ID?.[0] ?? "";
-    if(pa !== pb) return pa.localeCompare(pb);
-    return (extractNum(a.ID)||0) - (extractNum(b.ID)||0);
-  }
+  function sortById(a,b){ const pa=a.ID?.[0]??"", pb=b.ID?.[0]??""; if(pa!==pb) return pa.localeCompare(pb); return (extractNum(a.ID)||0)-(extractNum(b.ID)||0); }
   function fieldForHeader(h){ return (h === "N°=") ? "ID" : h; }
 
-  function render(tableEl, rows, key){
+  function render(tableEl, headers, rows, key, fields){
     const thead = tableEl.querySelector("thead");
     const tbody = tableEl.querySelector("tbody");
 
-    thead.innerHTML = `<tr>${DISPLAY_HEADERS.map(h=>`<th>${esc(h)}</th>`).join("")}</tr>`;
-
-    tbody.innerHTML = rows.map((r, i)=>`
+    thead.innerHTML = `<tr>${headers.map(h=>`<th>${esc(h)}</th>`).join("")}</tr>`;
+    tbody.innerHTML = rows.map((r,i)=>`
       <tr data-idx="${i}">
         ${
-          DISPLAY_HEADERS.map(h=>{
+          headers.map(h=>{
             const field = fieldForHeader(h);
-            const v = (field === "ID") ? r.ID : (r[field] ?? "");
+            const v = (field==="ID") ? r.ID : (r[field] ?? "");
             const ro = (field==="ID") ? "readonly" : "";
             const type = (field==="Date") ? "date" : "text";
             return `<td><input ${ro} type="${type}" value="${esc(v)}" data-field="${esc(field)}"/></td>`;
@@ -204,33 +202,33 @@
 
     const timers = new Map();
     tbody.querySelectorAll("input").forEach(inp=>{
-      inp.addEventListener("change",(e)=>{ // save on blur/change
+      inp.addEventListener("change",(e)=>{
         const tr = e.target.closest("tr");
         const idx = Number(tr.dataset.idx);
         const field = e.target.dataset.field;
         const val = e.target.value;
-        if(field !== "ID") state[key][idx][field] = val;
+        if(field !== "ID") rows[idx][field] = val;
 
-        const id = state[key][idx].ID;
+        const id = rows[idx].ID;
         if(timers.get(id)) clearTimeout(timers.get(id));
         timers.set(id, setTimeout(async ()=>{
-          try{ await saveRow(key, state[key][idx]); setStatus("تم الحفظ ✅"); }
-          catch(err){ showErr("Save error:\n"+(err?.message||err)); alert("خطأ في الحفظ: "+(err?.message||err)); }
+          try{ await saveRow(key, rows[idx], fields); setStatus("تم الحفظ ✅"); }
+          catch(err){ showErr("Save error\n"+(err?.message||err)); alert("خطأ في الحفظ: "+(err?.message||err)); }
         }, 150));
       });
     });
   }
 
   function rerender(){
-    render($("tblBrutes"), state.brutes, "brutes");
-    render($("tblTraitees"), state.traitees, "traitees");
+    render($("tblBrutes"), BR_HEADERS, state.brutes, "brutes", BR_FIELDS);
+    render($("tblTraitees"), TR_HEADERS, state.traitees, "traitees", TR_FIELDS);
   }
 
-  async function saveRow(which, row){
-    const col = which === "brutes" ? "brutes" : "traitees";
+  async function saveRow(which, row, fields){
+    const col = (which === "brutes") ? "brutes" : "traitees";
     const id = row.ID;
-    const payload = { ...row };
-    delete payload.ID;
+    const payload = {};
+    for(const f of fields){ if(f !== "ID") payload[f] = row[f] ?? ""; }
     payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await db.collection(col).doc(id).set(payload, { merge:true });
   }
@@ -239,20 +237,20 @@
     stopRealtime();
     setStatus("تحميل البيانات...");
     unsubB = db.collection("brutes").onSnapshot((snap)=>{
-      state.brutes = snap.docs.map(d=>normalize({ID:d.id, ...d.data()})).sort(sortById);
+      state.brutes = snap.docs.map(d=>normalize({ID:d.id, ...d.data()}, BR_FIELDS)).sort(sortById);
       rerender(); setStatus("تم التحديث ✅");
-    }, err=>showErr("Snapshot brutes:\n"+(err?.message||err)));
+    }, err=>showErr("Snapshot brutes\n"+(err?.message||err)));
     unsubT = db.collection("traitees").onSnapshot((snap)=>{
-      state.traitees = snap.docs.map(d=>normalize({ID:d.id, ...d.data()})).sort(sortById);
+      state.traitees = snap.docs.map(d=>normalize({ID:d.id, ...d.data()}, TR_FIELDS)).sort(sortById);
       rerender(); setStatus("تم التحديث ✅");
-    }, err=>showErr("Snapshot traitees:\n"+(err?.message||err)));
+    }, err=>showErr("Snapshot traitees\n"+(err?.message||err)));
   }
-  function stopRealtime(){ if(unsubB) unsubB(); if(unsubT) unsubT(); unsubB = unsubT = null; }
+  function stopRealtime(){ if(unsubB) unsubB(); if(unsubT) unsubT(); unsubB=unsubT=null; }
 
   $("btnLogin").addEventListener("click", async ()=>{
     $("authMsg").textContent = "";
     try{ await auth.signInWithEmailAndPassword($("email").value.trim(), $("password").value); }
-    catch(e){ $("authMsg").textContent = e?.message || "خطأ"; showErr("Auth error:\n"+(e?.message||e)); }
+    catch(e){ $("authMsg").textContent = e?.message || "خطأ"; showErr("Auth error\n"+(e?.message||e)); }
   });
   $("btnLogout").addEventListener("click", ()=> auth.signOut());
 
@@ -268,12 +266,12 @@
   });
 
   $("addBrutes").addEventListener("click", async ()=>{
-    try{ const id = nextId("B", state.brutes); await saveRow("brutes", normalize({ID:id})); }
-    catch(err){ showErr("Add brutes:\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
+    try{ const id = nextId("B", state.brutes); await saveRow("brutes", {ID:id}, BR_FIELDS); }
+    catch(err){ showErr("Add brutes\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
   });
   $("addTraitees").addEventListener("click", async ()=>{
-    try{ const id = nextId("T", state.traitees); await saveRow("traitees", normalize({ID:id})); }
-    catch(err){ showErr("Add traitees:\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
+    try{ const id = nextId("T", state.traitees); await saveRow("traitees", {ID:id}, TR_FIELDS); }
+    catch(err){ showErr("Add traitees\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
   });
 
   $("btnSync").addEventListener("click", async ()=>{
@@ -284,36 +282,41 @@
       for(const b of state.brutes){
         const n = extractNum(b.ID); if(!n) continue;
         const tid = "T"+n;
-        const target = tMap.get(tid) ? { ...tMap.get(tid) } : normalize({ID:tid});
+        const target = tMap.get(tid) ? { ...tMap.get(tid) } : normalize({ID:tid}, TR_FIELDS);
         let changed = false;
         for(const c of SYNC_COLS){ const v = b[c] ?? ""; if(v!=="" && target[c]!==v){ target[c]=v; changed=true; } }
         if(changed){
-          const payload = { ...target }; delete payload.ID;
+          const payload = {};
+          for(const f of TR_FIELDS){ if(f!=="ID") payload[f] = target[f] ?? ""; }
           payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
           batch.set(db.collection("traitees").doc(tid), payload, { merge:true });
         }
       }
       await batch.commit();
       setStatus("تمت المزامنة ✅"); alert("تمت المزامنة ✅");
-    }catch(err){ showErr("Sync:\n"+(err?.message||err)); alert("خطأ مزامنة: "+(err?.message||err)); }
+    }catch(err){ showErr("Sync\n"+(err?.message||err)); alert("خطأ مزامنة: "+(err?.message||err)); }
   });
 
+  // Export: Brutes without Aluminium, Traitées with Aluminium (as in template)
   $("btnExport").addEventListener("click", ()=>{
     if(typeof XLSX==="undefined") return alert("XLSX غير متاح");
     const wb = XLSX.utils.book_new();
-    const toSheetRows = (arr) => arr.map(r => {
+
+    const toSheetRows = (headers, rows) => rows.map(r => {
       const o = {};
-      for(const h of DISPLAY_HEADERS){ const f = fieldForHeader(h); o[h] = (f==="ID") ? r.ID : (r[f] ?? ""); }
+      for(const h of headers){ const f = fieldForHeader(h); o[h] = (f==="ID") ? r.ID : (r[f] ?? ""); }
       return o;
     });
-    const wsB = XLSX.utils.json_to_sheet(toSheetRows(state.brutes), { header: DISPLAY_HEADERS });
-    const wsT = XLSX.utils.json_to_sheet(toSheetRows(state.traitees), { header: DISPLAY_HEADERS });
+
+    const wsB = XLSX.utils.json_to_sheet(toSheetRows(BR_HEADERS, state.brutes), { header: BR_HEADERS });
+    const wsT = XLSX.utils.json_to_sheet(toSheetRows(TR_HEADERS, state.traitees), { header: TR_HEADERS });
     XLSX.utils.book_append_sheet(wb, wsB, "Brutes");
     XLSX.utils.book_append_sheet(wb, wsT, "Traitées");
     const stamp = new Date().toISOString().slice(0,10);
     XLSX.writeFile(wb, `Resultats_Physico_Chimique_${stamp}.xlsx`);
   });
 
+  // Import base: reads sheets; for Brutes ignores Aluminium even if present
   $("btnImportBase").addEventListener("click", ()=>{ $("fileImport").value=""; $("fileImport").click(); });
 
   function toIsoDate(v){
@@ -333,18 +336,17 @@
       const wb = XLSX.read(buf, { type:"array", cellDates:true });
       for(const s of ["Brutes","Traitées"]) if(!wb.Sheets[s]) throw new Error("Sheet missing: "+s);
 
-      const importSheet = async (sheetName, collectionName)=>{
+      const importSheet = async (sheetName, collectionName, headers, fields)=>{
         const ws = wb.Sheets[sheetName];
         const aoa = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:"" });
-
         let headerRowIdx = -1;
         for(let i=0; i<Math.min(20, aoa.length); i++){ 
           const row = (aoa[i]||[]).map(x=>String(x||"").trim());
           if(row.includes("N°=") || row.includes("N°")){ headerRowIdx=i; break; }
         }
         if(headerRowIdx === -1) throw new Error("Cannot find header row in sheet "+sheetName);
-        const headers = (aoa[headerRowIdx]||[]).map(h=>String(h||"").trim());
-        const idxByHeader = new Map(headers.map((h,i)=>[h,i]));
+        const xHeaders = (aoa[headerRowIdx]||[]).map(h=>String(h||"").trim());
+        const idxByHeader = new Map(xHeaders.map((h,i)=>[h,i]));
 
         const rows = [];
         for(let r=headerRowIdx+1; r<aoa.length; r++){ 
@@ -357,12 +359,13 @@
           if(!/^[BT]\d+$/i.test(finalId)) continue;
 
           const docRow = { ID: finalId };
-          for(const h of DISPLAY_HEADERS){ 
-            if(h==="N°=") continue;
-            const idx = idxByHeader.get(h);
+          for(const f of fields){ 
+            if(f==="ID") continue;
+            // Read from excel column with same name if present
+            const idx = idxByHeader.get(f);
             let v = (idx===undefined) ? "" : row[idx];
-            if(h==="Date") v = toIsoDate(v);
-            docRow[h] = (v===null || v===undefined) ? "" : v;
+            if(f==="Date") v = toIsoDate(v);
+            docRow[f] = (v===null || v===undefined) ? "" : v;
           }
           rows.push(docRow);
         }
@@ -380,11 +383,11 @@
         }
       };
 
-      await importSheet("Brutes","brutes");
-      await importSheet("Traitées","traitees");
+      await importSheet("Brutes","brutes", BR_HEADERS, BR_FIELDS);
+      await importSheet("Traitées","traitees", TR_HEADERS, TR_FIELDS);
       setStatus("تم الاستيراد ✅");
       alert("✅ تم استيراد ملف Excel بنجاح.\nإذا كانت بيانات قديمة بنفس ID سيتم تحديثها.");
-    }catch(err){ showErr("Import error:\n" + (err?.message || err)); alert("خطأ في الاستيراد: " + (err?.message || err)); setStatus("فشل ❌"); }
+    }catch(err){ showErr("Import error\n" + (err?.message || err)); alert("خطأ في الاستيراد: " + (err?.message || err)); setStatus("فشل ❌"); }
   });
 </script>
 </body>

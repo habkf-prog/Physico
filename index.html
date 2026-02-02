@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Physico Chimique - Firebase</title>
 
-  <!-- Firebase compat (works reliably on GitHub Pages / mobile) -->
+  <!-- Firebase compat -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
-  <!-- Excel export/import (SheetJS) -->
+  <!-- Excel import/export -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
@@ -35,7 +35,7 @@
     th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
     td input{ width:100%; background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; }
 
-    /* ✅ توسيع عمود pH فقط قليلاً (حسب ملف Excel) */
+    /* ✅ توسيع عمود pH فقط قليلاً */
     th:nth-child(12), td:nth-child(12){ min-width: 92px; width: 92px; }
     td:nth-child(12) input{ min-width: 86px; }
 
@@ -50,7 +50,7 @@
   <div class="wrap row">
     <div>
       <div style="font-weight:900;">Physico Chimique (Firebase)</div>
-      <div class="muted">تسجيل دخول + Firestore + مزامنة + استيراد/تصدير Excel — (الكل يضيف/يعدل، بدون حذف)</div>
+      <div class="muted">اعتماد ملف Excel كقالب إدخال (نفس الأعمدة) + Firestore + تسجيل دخول — (الكل يضيف/يعدل، بدون حذف)</div>
     </div>
     <div class="right row">
       <span class="pill" id="userPill" style="display:none;"></span>
@@ -94,8 +94,9 @@
         <span class="muted right" id="status"></span>
       </div>
       <div class="muted" style="margin-top:8px;">
-        - الحذف غير موجود في الواجهة. (Rules تمنع delete).<br/>
-        - الحفظ يتم بعد الخروج من الخانة (على الهاتف).
+        - الحذف غير موجود (Rules تمنع delete).<br/>
+        - الحفظ يتم بعد الخروج من الخانة (مناسب للهاتف).<br/>
+        - الأعمدة مطابقة لملفك: <span class="pill">Brutes / Traitées</span>
       </div>
     </div>
 
@@ -124,13 +125,13 @@
 </main>
 
 <script>
-  // show JS errors on screen (helps when you see a white page)
+  // show JS errors on screen
   const errBox = document.getElementById("errBox");
   function showErr(msg){ errBox.style.display="block"; errBox.textContent = msg; }
   window.addEventListener("error", (e) => showErr("JS Error:\n" + (e.message || e.error || e)));
   window.addEventListener("unhandledrejection", (e) => showErr("Unhandled Promise:\n" + (e.reason?.message || e.reason || e)));
 
-  // ✅ Firebase config
+  // Firebase config
   const firebaseConfig = {
     apiKey: "AIzaSyCsyfCX5J22RelD45VCE5vhp6NY_RL8Z5M",
     authDomain: "phisico.firebaseapp.com",
@@ -144,12 +145,9 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
 
-  // Headers exactly like your Excel file (Brutes / Traitées)
+  // ✅ Headers from your Excel template
   const DISPLAY_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
-  // Internal fields used in Firestore (ID + same header names)
   const FIELDS = ["ID", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
-
-  // Sync columns Brutes -> Traitées
   const SYNC_COLS = ["Point de prélevement","Centre","Communes","Date"];
 
   let state = { brutes: [], traitees: [] };
@@ -172,26 +170,17 @@
   }
   function normalize(row){
     const out = {};
-    // Ensure all fields exist
     out.ID = row.ID;
-    for(const f of FIELDS){
-      if(f === "ID") continue;
-      out[f] = (row[f] ?? "");
-    }
+    for(const f of FIELDS){ if(f!=="ID") out[f] = (row[f] ?? ""); }
     return out;
   }
-  function esc(s){
-    return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-  }
+  function esc(s){ return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
   function sortById(a,b){
     const pa = a.ID?.[0] ?? "", pb = b.ID?.[0] ?? "";
     if(pa !== pb) return pa.localeCompare(pb);
     return (extractNum(a.ID)||0) - (extractNum(b.ID)||0);
   }
-
-  function fieldForDisplayHeader(h){
-    return (h === "N°=") ? "ID" : h;
-  }
+  function fieldForHeader(h){ return (h === "N°=") ? "ID" : h; }
 
   function render(tableEl, rows, key){
     const thead = tableEl.querySelector("thead");
@@ -203,7 +192,7 @@
       <tr data-idx="${i}">
         ${
           DISPLAY_HEADERS.map(h=>{
-            const field = fieldForDisplayHeader(h);
+            const field = fieldForHeader(h);
             const v = (field === "ID") ? r.ID : (r[field] ?? "");
             const ro = (field==="ID") ? "readonly" : "";
             const type = (field==="Date") ? "date" : "text";
@@ -215,18 +204,17 @@
 
     const timers = new Map();
     tbody.querySelectorAll("input").forEach(inp=>{
-      inp.addEventListener("change",(e)=>{   // ✅ save on blur/change (mobile-friendly)
+      inp.addEventListener("change",(e)=>{ // save on blur/change
         const tr = e.target.closest("tr");
         const idx = Number(tr.dataset.idx);
         const field = e.target.dataset.field;
         const val = e.target.value;
-
         if(field !== "ID") state[key][idx][field] = val;
 
         const id = state[key][idx].ID;
         if(timers.get(id)) clearTimeout(timers.get(id));
         timers.set(id, setTimeout(async ()=>{
-          try{ await saveRow(key, state[key][idx]); setStatus("تم الحفظ ✅ (بعد الخروج من الخانة)"); }
+          try{ await saveRow(key, state[key][idx]); setStatus("تم الحفظ ✅"); }
           catch(err){ showErr("Save error:\n"+(err?.message||err)); alert("خطأ في الحفظ: "+(err?.message||err)); }
         }, 150));
       });
@@ -259,22 +247,13 @@
       rerender(); setStatus("تم التحديث ✅");
     }, err=>showErr("Snapshot traitees:\n"+(err?.message||err)));
   }
-  function stopRealtime(){
-    if(unsubB) unsubB();
-    if(unsubT) unsubT();
-    unsubB = unsubT = null;
-  }
+  function stopRealtime(){ if(unsubB) unsubB(); if(unsubT) unsubT(); unsubB = unsubT = null; }
 
   $("btnLogin").addEventListener("click", async ()=>{
     $("authMsg").textContent = "";
-    try{
-      await auth.signInWithEmailAndPassword($("email").value.trim(), $("password").value);
-    }catch(e){
-      $("authMsg").textContent = e?.message || "خطأ في تسجيل الدخول";
-      showErr("Auth error:\n"+(e?.message||e));
-    }
+    try{ await auth.signInWithEmailAndPassword($("email").value.trim(), $("password").value); }
+    catch(e){ $("authMsg").textContent = e?.message || "خطأ"; showErr("Auth error:\n"+(e?.message||e)); }
   });
-
   $("btnLogout").addEventListener("click", ()=> auth.signOut());
 
   auth.onAuthStateChanged((user)=>{
@@ -289,17 +268,12 @@
   });
 
   $("addBrutes").addEventListener("click", async ()=>{
-    try{
-      const id = nextId("B", state.brutes);
-      await saveRow("brutes", normalize({ID:id}));
-    }catch(err){ showErr("Add brutes:\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
+    try{ const id = nextId("B", state.brutes); await saveRow("brutes", normalize({ID:id})); }
+    catch(err){ showErr("Add brutes:\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
   });
-
   $("addTraitees").addEventListener("click", async ()=>{
-    try{
-      const id = nextId("T", state.traitees);
-      await saveRow("traitees", normalize({ID:id}));
-    }catch(err){ showErr("Add traitees:\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
+    try{ const id = nextId("T", state.traitees); await saveRow("traitees", normalize({ID:id})); }
+    catch(err){ showErr("Add traitees:\n"+(err?.message||err)); alert("لا يمكن الإضافة: "+(err?.message||err)); }
   });
 
   $("btnSync").addEventListener("click", async ()=>{
@@ -308,15 +282,11 @@
       const batch = db.batch();
       const tMap = new Map(state.traitees.map(r=>[r.ID, r]));
       for(const b of state.brutes){
-        const n = extractNum(b.ID);
-        if(!n) continue;
+        const n = extractNum(b.ID); if(!n) continue;
         const tid = "T"+n;
         const target = tMap.get(tid) ? { ...tMap.get(tid) } : normalize({ID:tid});
         let changed = false;
-        for(const c of SYNC_COLS){
-          const v = b[c] ?? "";
-          if(v !== "" && target[c] !== v){ target[c]=v; changed=true; }
-        }
+        for(const c of SYNC_COLS){ const v = b[c] ?? ""; if(v!=="" && target[c]!==v){ target[c]=v; changed=true; } }
         if(changed){
           const payload = { ...target }; delete payload.ID;
           payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -324,27 +294,18 @@
         }
       }
       await batch.commit();
-      setStatus("تمت المزامنة ✅");
-      alert("تمت المزامنة ✅");
+      setStatus("تمت المزامنة ✅"); alert("تمت المزامنة ✅");
     }catch(err){ showErr("Sync:\n"+(err?.message||err)); alert("خطأ مزامنة: "+(err?.message||err)); }
   });
 
-  // Export Excel with the same columns as your template
   $("btnExport").addEventListener("click", ()=>{
     if(typeof XLSX==="undefined") return alert("XLSX غير متاح");
     const wb = XLSX.utils.book_new();
-
-    const toSheetRows = (arr, prefix) => {
-      return arr.map(r=>{
-        const o = {};
-        for(const h of DISPLAY_HEADERS){
-          const field = fieldForDisplayHeader(h);
-          o[h] = (field === "ID") ? r.ID : (r[field] ?? "");
-        }
-        return o;
-      });
-    };
-
+    const toSheetRows = (arr) => arr.map(r => {
+      const o = {};
+      for(const h of DISPLAY_HEADERS){ const f = fieldForHeader(h); o[h] = (f==="ID") ? r.ID : (r[f] ?? ""); }
+      return o;
+    });
     const wsB = XLSX.utils.json_to_sheet(toSheetRows(state.brutes), { header: DISPLAY_HEADERS });
     const wsT = XLSX.utils.json_to_sheet(toSheetRows(state.traitees), { header: DISPLAY_HEADERS });
     XLSX.utils.book_append_sheet(wb, wsB, "Brutes");
@@ -353,81 +314,55 @@
     XLSX.writeFile(wb, `Resultats_Physico_Chimique_${stamp}.xlsx`);
   });
 
-  // Import Excel as initial base (Brutes & Traitées sheets)
-  $("btnImportBase").addEventListener("click", ()=>{
-    $("fileImport").value = "";
-    $("fileImport").click();
-  });
+  $("btnImportBase").addEventListener("click", ()=>{ $("fileImport").value=""; $("fileImport").click(); });
 
   function toIsoDate(v){
     if(!v) return "";
     if(Object.prototype.toString.call(v) === "[object Date]" && !isNaN(v)) return v.toISOString().slice(0,10);
-    if(typeof v === "string"){
-      const m = v.match(/^(\d{4}-\d{2}-\d{2})/);
-      if(m) return m[1];
-      return v;
-    }
-    if(typeof v === "number"){
-      const d = XLSX.SSF.parse_date_code(v);
-      if(d){
-        const yyyy = String(d.y).padStart(4,"0");
-        const mm = String(d.m).padStart(2,"0");
-        const dd = String(d.d).padStart(2,"0");
-        return `${yyyy}-${mm}-${dd}`;
-      }
-    }
+    if(typeof v === "string"){ const m=v.match(/^(\d{4}-\d{2}-\d{2})/); return m?m[1]:v; }
+    if(typeof v === "number"){ const d = XLSX.SSF.parse_date_code(v); if(d) return `${String(d.y).padStart(4,"0")}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`; }
     return String(v);
   }
 
   $("fileImport").addEventListener("change", async (ev)=>{
     const file = ev.target.files && ev.target.files[0];
     if(!file) return;
-
     try{
       setStatus("قراءة ملف Excel...");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type:"array", cellDates:true });
-
       for(const s of ["Brutes","Traitées"]) if(!wb.Sheets[s]) throw new Error("Sheet missing: "+s);
 
       const importSheet = async (sheetName, collectionName)=>{
         const ws = wb.Sheets[sheetName];
         const aoa = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:"" });
 
-        // find header row that contains N°=
         let headerRowIdx = -1;
-        for(let i=0; i<Math.min(15, aoa.length); i++){
+        for(let i=0; i<Math.min(20, aoa.length); i++){ 
           const row = (aoa[i]||[]).map(x=>String(x||"").trim());
-          if(row.includes("N°=") || row.includes("N°")){ headerRowIdx = i; break; }
+          if(row.includes("N°=") || row.includes("N°")){ headerRowIdx=i; break; }
         }
         if(headerRowIdx === -1) throw new Error("Cannot find header row in sheet "+sheetName);
-
         const headers = (aoa[headerRowIdx]||[]).map(h=>String(h||"").trim());
         const idxByHeader = new Map(headers.map((h,i)=>[h,i]));
 
-        // Build docs
         const rows = [];
-        for(let r = headerRowIdx+1; r<aoa.length; r++){
+        for(let r=headerRowIdx+1; r<aoa.length; r++){ 
           const row = aoa[r] || [];
           const rawId = row[idxByHeader.get("N°=") ?? 0];
-          const id = String(rawId||"").trim();
-          if(!id) continue;
-
-          // Accept IDs like B1 / T1, OR numeric like 1 (we convert based on sheet)
-          let finalId = id;
-          if(/^[0-9]+$/.test(id)){
-            finalId = (sheetName === "Brutes" ? "B" : "T") + id;
-          }
+          const id0 = String(rawId||"").trim();
+          if(!id0) continue;
+          let finalId = id0;
+          if(/^[0-9]+$/.test(id0)) finalId = (sheetName==="Brutes" ? "B" : "T") + id0;
           if(!/^[BT]\d+$/i.test(finalId)) continue;
 
           const docRow = { ID: finalId };
-          for(const h of DISPLAY_HEADERS){
-            if(h === "N°=") continue;
+          for(const h of DISPLAY_HEADERS){ 
+            if(h==="N°=") continue;
             const idx = idxByHeader.get(h);
-            if(idx === undefined) { docRow[h] = ""; continue; }
-            let v = row[idx];
-            if(h === "Date") v = toIsoDate(v);
-            docRow[h] = (v === null || v === undefined) ? "" : v;
+            let v = (idx===undefined) ? "" : row[idx];
+            if(h==="Date") v = toIsoDate(v);
+            docRow[h] = (v===null || v===undefined) ? "" : v;
           }
           rows.push(docRow);
         }
@@ -437,9 +372,7 @@
         for(let i=0; i<rows.length; i+=CHUNK){
           const batch = db.batch();
           for(const docRow of rows.slice(i,i+CHUNK)){
-            const id = docRow.ID;
-            const payload = { ...docRow };
-            delete payload.ID;
+            const payload = { ...docRow }; const id = payload.ID; delete payload.ID;
             payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
             batch.set(db.collection(collectionName).doc(id), payload, { merge:true });
           }
@@ -449,15 +382,9 @@
 
       await importSheet("Brutes","brutes");
       await importSheet("Traitées","traitees");
-
       setStatus("تم الاستيراد ✅");
       alert("✅ تم استيراد ملف Excel بنجاح.\nإذا كانت بيانات قديمة بنفس ID سيتم تحديثها.");
-    }catch(err){
-      console.error(err);
-      showErr("Import error:\n" + (err?.message || err));
-      alert("خطأ في الاستيراد: " + (err?.message || err));
-      setStatus("فشل الاستيراد ❌");
-    }
+    }catch(err){ showErr("Import error:\n" + (err?.message || err)); alert("خطأ في الاستيراد: " + (err?.message || err)); setStatus("فشل ❌"); }
   });
 </script>
 </body>

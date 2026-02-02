@@ -30,14 +30,14 @@
     .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     @media (max-width: 980px){ .grid2{ grid-template-columns:1fr; } }
     .tableWrap{ max-height: 430px; overflow:auto; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
-    table{ width:100%; border-collapse:collapse; font-size:13px; table-layout: fixed; }
-    colgroup col{ width: 140px; }
-    th, td{ min-width:140px; }
-    th:first-child, td:first-child{ min-width:90px; width:90px; }
-    td input{ min-width:120px; }
+    table{ width:100%; border-collapse:collapse; font-size:13px; }
     th, td{ border-bottom:1px solid var(--line); padding:8px; text-align:right; }
     th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
     td input{ width:100%; background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; }
+
+    /* ✅ تحسين عمود pH على الهاتف (العمود رقم 7 حسب ترتيب الأعمدة) */
+    th:nth-child(7), td:nth-child(7){ min-width: 92px; width: 92px; }
+    td:nth-child(7) input{ min-width: 86px; }
     #errBox{ display:none; white-space:pre-wrap; border:1px solid rgba(255,100,100,.45); background:rgba(255,100,100,.10);
              padding:10px 12px; border-radius:12px; color:#ffd1d1; margin-top:10px; direction:ltr; text-align:left;
              font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
@@ -177,7 +177,7 @@
   function render(tableEl, rows, key){
     const thead = tableEl.querySelector("thead");
     const tbody = tableEl.querySelector("tbody");
-    thead.innerHTML = `<colgroup>${COLS.map((c,i)=>`<col/>`).join("")}</colgroup><tr>${COLS.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
+    thead.innerHTML = `<tr>${COLS.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
     tbody.innerHTML = rows.map((r, i)=>`
       <tr data-idx="${i}">
         ${COLS.map(c=>{

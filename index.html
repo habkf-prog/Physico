@@ -30,7 +30,11 @@
     .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     @media (max-width: 980px){ .grid2{ grid-template-columns:1fr; } }
     .tableWrap{ max-height: 430px; overflow:auto; border-radius:12px; border:1px solid var(--line); margin-top:10px; }
-    table{ width:100%; border-collapse:collapse; font-size:13px; }
+    table{ width:100%; border-collapse:collapse; font-size:13px; table-layout: fixed; }
+    colgroup col{ width: 140px; }
+    th, td{ min-width:140px; }
+    th:first-child, td:first-child{ min-width:90px; width:90px; }
+    td input{ min-width:120px; }
     th, td{ border-bottom:1px solid var(--line); padding:8px; text-align:right; }
     th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
     td input{ width:100%; background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; }
@@ -173,7 +177,7 @@
   function render(tableEl, rows, key){
     const thead = tableEl.querySelector("thead");
     const tbody = tableEl.querySelector("tbody");
-    thead.innerHTML = `<tr>${COLS.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
+    thead.innerHTML = `<colgroup>${COLS.map((c,i)=>`<col/>`).join("")}</colgroup><tr>${COLS.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
     tbody.innerHTML = rows.map((r, i)=>`
       <tr data-idx="${i}">
         ${COLS.map(c=>{

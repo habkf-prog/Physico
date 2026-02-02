@@ -88,9 +88,11 @@
       <div class="row">
         <button id="btnSync">مزامنة (Brutes → Traitées)</button>
         <button id="btnExport">تصدير Excel</button>
+        <button id="btnImportBase">استيراد Excel (كأساس)</button>
+        <input id="fileImport" type="file" accept=".xlsx,.xls" style="display:none" />
         <span class="muted right" id="status"></span>
       </div>
-      <div class="muted" style="margin-top:8px;">الحذف غير موجود في الواجهة. (تأكد من Rules تمنع delete)</div>
+      <div class="muted" style="margin-top:8px;">الحذف غير موجود في الواجهة. (تأكد من Rules تمنع delete) — يمكنك استيراد ملف Excel مرة واحدة لتهيئة البيانات.</div>
     </div>
 
     <div class="grid2" style="margin-top:12px;">
@@ -313,6 +315,151 @@
     const stamp = new Date().toISOString().slice(0,10);
     XLSX.writeFile(wb, `Resultats_Physico_Chimique_${stamp}.xlsx`);
   });
+
+
+  // ----------------------------
+  // Import Excel as initial base
+  // ----------------------------
+  $("btnImportBase").addEventListener("click", () => {
+    $("fileImport").value = "";
+    $("fileImport").click();
+  });
+
+  $("fileImport").addEventListener("change", async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    if(!file) return;
+
+    try{
+      setStatus("قراءة ملف Excel...");
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+
+      // Expect sheets named exactly: Brutes, Traitées
+      const wanted = ["Brutes", "Traitées"];
+      for(const s of wanted){
+        if(!wb.Sheets[s]) throw new Error(`Sheet missing: ${s}`);
+      }
+
+      // Map from Excel headers to our fields
+      const mapHeader = (h) => {
+        const t = String(h||"").trim();
+        if(t === "N°=" || t === "N°" || t.toLowerCase() === "n°=") return "ID";
+        if(t.toLowerCase().includes("point")) return "Point de prélevement";
+        if(t.toLowerCase().includes("centre")) return "Centre";
+        if(t.toLowerCase().includes("commune")) return "Communes";
+        if(t.toLowerCase() === "date") return "Date";
+        if(t.toLowerCase().includes("temp")) return "Temp.";
+        if(t.toLowerCase().includes("cond")) return "Cond.";
+        if(t.toLowerCase().includes("turb")) return "Turbidité";
+        if(t.toLowerCase() === "ph") return "pH";
+        return null; // ignore others (Couleur, Salinité, TDS...)
+      };
+
+      // Convert Excel date to yyyy-mm-dd (or keep as string)
+      const toIsoDate = (v) => {
+        if(!v) return "";
+        // if already Date
+        if(Object.prototype.toString.call(v) === "[object Date]" && !isNaN(v)){
+          return v.toISOString().slice(0,10);
+        }
+        // if string
+        if(typeof v === "string"){
+          // accept yyyy-mm-dd
+          const m = v.match(/^(\d{4}-\d{2}-\d{2})/);
+          if(m) return m[1];
+          return v; // fallback
+        }
+        // number could be Excel date serial; attempt parse
+        if(typeof v === "number"){
+          const d = XLSX.SSF.parse_date_code(v);
+          if(d){
+            const yyyy = String(d.y).padStart(4,"0");
+            const mm = String(d.m).padStart(2,"0");
+            const dd = String(d.d).padStart(2,"0");
+            return `${yyyy}-${mm}-${dd}`;
+          }
+        }
+        return String(v);
+      };
+
+      const importSheet = async (sheetName, collectionName) => {
+        const ws = wb.Sheets[sheetName];
+
+        // Read as array of arrays so we can detect header row
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: "" });
+
+        // Find header row containing "N°=" in first cells (usually row index 1)
+        let headerRowIdx = -1;
+        for(let i=0; i<Math.min(10, aoa.length); i++){
+          const row = aoa[i] || [];
+          const joined = row.map(x=>String(x||"").trim());
+          if(joined.includes("N°=") || joined.includes("N°")){
+            headerRowIdx = i;
+            break;
+          }
+        }
+        if(headerRowIdx === -1) throw new Error(`Cannot find header row in sheet ${sheetName}`);
+
+        const headers = aoa[headerRowIdx].map(h => String(h||"").trim());
+        const colMap = headers.map(h => mapHeader(h));
+
+        // Build docs from rows after headerRowIdx
+        const rows = [];
+        for(let r = headerRowIdx+1; r < aoa.length; r++){
+          const row = aoa[r] || [];
+          const idCell = row[0];
+          const id = String(idCell||"").trim();
+          if(!id) continue; // skip empty
+          // Accept only IDs like B1.. or T1..
+          if(!/^[BT]\d+$/i.test(id)) continue;
+
+          const doc = { ID: id };
+          for(let c=0; c<colMap.length; c++){
+            const field = colMap[c];
+            if(!field || field==="ID") continue;
+            let v = row[c];
+            if(field==="Date") v = toIsoDate(v);
+            doc[field] = (v === null || v === undefined) ? "" : v;
+          }
+          // Normalize expected fields even if missing
+          for(const f of COLS){
+            if(f==="ID") continue;
+            if(doc[f] === undefined) doc[f] = "";
+          }
+          rows.push(doc);
+        }
+
+        setStatus(`استيراد ${sheetName}... (${rows.length})`);
+        // Write in batches of 400 to be safe
+        const CHUNK = 400;
+        for(let i=0; i<rows.length; i+=CHUNK){
+          const batch = db.batch();
+          const chunk = rows.slice(i, i+CHUNK);
+          chunk.forEach(docRow => {
+            const id = docRow.ID;
+            const payload = { ...docRow };
+            delete payload.ID;
+            payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+            batch.set(db.collection(collectionName).doc(id), payload, { merge: true });
+          });
+          await batch.commit();
+        }
+      };
+
+      // Do import
+      await importSheet("Brutes", "brutes");
+      await importSheet("Traitées", "traitees");
+
+      setStatus("تم الاستيراد ✅");
+      alert("تم استيراد ملف Excel ✅\nإذا كانت هناك بيانات قديمة بنفس ID سيتم تحديثها.");
+    }catch(err){
+      console.error(err);
+      showErr("Import error:\n" + (err?.message || err));
+      alert("خطأ في الاستيراد: " + (err?.message || err));
+      setStatus("فشل الاستيراد ❌");
+    }
+  });
+
 </script>
 </body>
 </html>

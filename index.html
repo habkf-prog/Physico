@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Physico Chimique - Firebase (Editor)</title>
+  <title>Physico Chimique - Firebase</title>
 
   <!-- Firebase compat (works reliably on GitHub Pages / mobile) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
-  <!-- Excel export (SheetJS) -->
+  <!-- Excel export/import (SheetJS) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <style>
@@ -35,9 +35,10 @@
     th{ position:sticky; top:0; background:rgba(17,26,46,.95); color:#cfe0ff; font-weight:900; }
     td input{ width:100%; background:#0e1730; border:1px solid var(--line); color:var(--text); padding:8px 10px; border-radius:10px; outline:none; }
 
-    /* ✅ تحسين عمود pH على الهاتف (العمود رقم 7 حسب ترتيب الأعمدة) */
-    th:nth-child(7), td:nth-child(7){ min-width: 92px; width: 92px; }
-    td:nth-child(7) input{ min-width: 86px; }
+    /* ✅ توسيع عمود pH فقط قليلاً (حسب ملف Excel) */
+    th:nth-child(12), td:nth-child(12){ min-width: 92px; width: 92px; }
+    td:nth-child(12) input{ min-width: 86px; }
+
     #errBox{ display:none; white-space:pre-wrap; border:1px solid rgba(255,100,100,.45); background:rgba(255,100,100,.10);
              padding:10px 12px; border-radius:12px; color:#ffd1d1; margin-top:10px; direction:ltr; text-align:left;
              font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
@@ -49,7 +50,7 @@
   <div class="wrap row">
     <div>
       <div style="font-weight:900;">Physico Chimique (Firebase)</div>
-      <div class="muted">تسجيل دخول + Firestore + مزامنة + تصدير Excel — (الكل يضيف/يعدل، بدون حذف)</div>
+      <div class="muted">تسجيل دخول + Firestore + مزامنة + استيراد/تصدير Excel — (الكل يضيف/يعدل، بدون حذف)</div>
     </div>
     <div class="right row">
       <span class="pill" id="userPill" style="display:none;"></span>
@@ -86,13 +87,16 @@
   <section id="app" style="display:none;">
     <div class="card">
       <div class="row">
-        <button id="btnSync">مزامنة (Brutes → Traitées)</button>
-        <button id="btnExport">تصدير Excel</button>
+        <button id="btnSync">مزامنة الأعمدة الأساسية (Brutes → Traitées)</button>
         <button id="btnImportBase">استيراد Excel (كأساس)</button>
         <input id="fileImport" type="file" accept=".xlsx,.xls" style="display:none" />
+        <button id="btnExport">تصدير Excel</button>
         <span class="muted right" id="status"></span>
       </div>
-      <div class="muted" style="margin-top:8px;">الحذف غير موجود في الواجهة. (تأكد من Rules تمنع delete) — يمكنك استيراد ملف Excel مرة واحدة لتهيئة البيانات.</div>
+      <div class="muted" style="margin-top:8px;">
+        - الحذف غير موجود في الواجهة. (Rules تمنع delete).<br/>
+        - الحفظ يتم بعد الخروج من الخانة (على الهاتف).
+      </div>
     </div>
 
     <div class="grid2" style="margin-top:12px;">
@@ -140,7 +144,12 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
 
-  const COLS = ["ID","Point de prélevement","Centre","Communes","Date","Temp.","pH","Cond.","Turbidité"];
+  // Headers exactly like your Excel file (Brutes / Traitées)
+  const DISPLAY_HEADERS = ["N°=", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
+  // Internal fields used in Firestore (ID + same header names)
+  const FIELDS = ["ID", "Point de prélevement", "Centre", "Communes", "Date", "Couleur", "Temp.", "Cond.", "Saliniré", "TDS", "Turbidité", "pH", "RS", "MO", "Calcium", "Dureté T", "Magnésium", "Sodium", "Potassium", "Ammonium", "Nitrites", "Nitrates", "Phosphates", "Chlorures", "Alcalinité", "Bicarbonate", "Sulfates", "Fer total", "Manganèse", "Aluminium"];
+
+  // Sync columns Brutes -> Traitées
   const SYNC_COLS = ["Point de prélevement","Centre","Communes","Date"];
 
   let state = { brutes: [], traitees: [] };
@@ -163,8 +172,12 @@
   }
   function normalize(row){
     const out = {};
-    for(const c of COLS) out[c] = row[c] ?? "";
+    // Ensure all fields exist
     out.ID = row.ID;
+    for(const f of FIELDS){
+      if(f === "ID") continue;
+      out[f] = (row[f] ?? "");
+    }
     return out;
   }
   function esc(s){
@@ -176,35 +189,46 @@
     return (extractNum(a.ID)||0) - (extractNum(b.ID)||0);
   }
 
+  function fieldForDisplayHeader(h){
+    return (h === "N°=") ? "ID" : h;
+  }
+
   function render(tableEl, rows, key){
     const thead = tableEl.querySelector("thead");
     const tbody = tableEl.querySelector("tbody");
-    thead.innerHTML = `<tr>${COLS.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
+
+    thead.innerHTML = `<tr>${DISPLAY_HEADERS.map(h=>`<th>${esc(h)}</th>`).join("")}</tr>`;
+
     tbody.innerHTML = rows.map((r, i)=>`
       <tr data-idx="${i}">
-        ${COLS.map(c=>{
-          const v = r[c] ?? "";
-          const ro = (c==="ID") ? "readonly" : "";
-          const type = (c==="Date") ? "date" : "text";
-          return `<td><input ${ro} type="${type}" value="${esc(v)}" data-col="${esc(c)}"/></td>`;
-        }).join("")}
+        ${
+          DISPLAY_HEADERS.map(h=>{
+            const field = fieldForDisplayHeader(h);
+            const v = (field === "ID") ? r.ID : (r[field] ?? "");
+            const ro = (field==="ID") ? "readonly" : "";
+            const type = (field==="Date") ? "date" : "text";
+            return `<td><input ${ro} type="${type}" value="${esc(v)}" data-field="${esc(field)}"/></td>`;
+          }).join("")
+        }
       </tr>
     `).join("");
 
     const timers = new Map();
     tbody.querySelectorAll("input").forEach(inp=>{
-      inp.addEventListener("change",(e)=>{
+      inp.addEventListener("change",(e)=>{   // ✅ save on blur/change (mobile-friendly)
         const tr = e.target.closest("tr");
         const idx = Number(tr.dataset.idx);
-        const col = e.target.dataset.col;
-        state[key][idx][col] = e.target.value;
+        const field = e.target.dataset.field;
+        const val = e.target.value;
+
+        if(field !== "ID") state[key][idx][field] = val;
 
         const id = state[key][idx].ID;
         if(timers.get(id)) clearTimeout(timers.get(id));
         timers.set(id, setTimeout(async ()=>{
           try{ await saveRow(key, state[key][idx]); setStatus("تم الحفظ ✅ (بعد الخروج من الخانة)"); }
           catch(err){ showErr("Save error:\n"+(err?.message||err)); alert("خطأ في الحفظ: "+(err?.message||err)); }
-        }, 450));
+        }, 150));
       });
     });
   }
@@ -305,153 +329,129 @@
     }catch(err){ showErr("Sync:\n"+(err?.message||err)); alert("خطأ مزامنة: "+(err?.message||err)); }
   });
 
+  // Export Excel with the same columns as your template
   $("btnExport").addEventListener("click", ()=>{
     if(typeof XLSX==="undefined") return alert("XLSX غير متاح");
     const wb = XLSX.utils.book_new();
-    const wsB = XLSX.utils.json_to_sheet(state.brutes.map(r=>Object.fromEntries(COLS.map(c=>[c,r[c]??""]))), { header: COLS });
-    const wsT = XLSX.utils.json_to_sheet(state.traitees.map(r=>Object.fromEntries(COLS.map(c=>[c,r[c]??""]))), { header: COLS });
+
+    const toSheetRows = (arr, prefix) => {
+      return arr.map(r=>{
+        const o = {};
+        for(const h of DISPLAY_HEADERS){
+          const field = fieldForDisplayHeader(h);
+          o[h] = (field === "ID") ? r.ID : (r[field] ?? "");
+        }
+        return o;
+      });
+    };
+
+    const wsB = XLSX.utils.json_to_sheet(toSheetRows(state.brutes), { header: DISPLAY_HEADERS });
+    const wsT = XLSX.utils.json_to_sheet(toSheetRows(state.traitees), { header: DISPLAY_HEADERS });
     XLSX.utils.book_append_sheet(wb, wsB, "Brutes");
     XLSX.utils.book_append_sheet(wb, wsT, "Traitées");
     const stamp = new Date().toISOString().slice(0,10);
     XLSX.writeFile(wb, `Resultats_Physico_Chimique_${stamp}.xlsx`);
   });
 
-
-  // ----------------------------
-  // Import Excel as initial base
-  // ----------------------------
-  $("btnImportBase").addEventListener("click", () => {
+  // Import Excel as initial base (Brutes & Traitées sheets)
+  $("btnImportBase").addEventListener("click", ()=>{
     $("fileImport").value = "";
     $("fileImport").click();
   });
 
-  $("fileImport").addEventListener("change", async (ev) => {
+  function toIsoDate(v){
+    if(!v) return "";
+    if(Object.prototype.toString.call(v) === "[object Date]" && !isNaN(v)) return v.toISOString().slice(0,10);
+    if(typeof v === "string"){
+      const m = v.match(/^(\d{4}-\d{2}-\d{2})/);
+      if(m) return m[1];
+      return v;
+    }
+    if(typeof v === "number"){
+      const d = XLSX.SSF.parse_date_code(v);
+      if(d){
+        const yyyy = String(d.y).padStart(4,"0");
+        const mm = String(d.m).padStart(2,"0");
+        const dd = String(d.d).padStart(2,"0");
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+    return String(v);
+  }
+
+  $("fileImport").addEventListener("change", async (ev)=>{
     const file = ev.target.files && ev.target.files[0];
     if(!file) return;
 
     try{
       setStatus("قراءة ملف Excel...");
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const wb = XLSX.read(buf, { type:"array", cellDates:true });
 
-      // Expect sheets named exactly: Brutes, Traitées
-      const wanted = ["Brutes", "Traitées"];
-      for(const s of wanted){
-        if(!wb.Sheets[s]) throw new Error(`Sheet missing: ${s}`);
-      }
+      for(const s of ["Brutes","Traitées"]) if(!wb.Sheets[s]) throw new Error("Sheet missing: "+s);
 
-      // Map from Excel headers to our fields
-      const mapHeader = (h) => {
-        const t = String(h||"").trim();
-        if(t === "N°=" || t === "N°" || t.toLowerCase() === "n°=") return "ID";
-        if(t.toLowerCase().includes("point")) return "Point de prélevement";
-        if(t.toLowerCase().includes("centre")) return "Centre";
-        if(t.toLowerCase().includes("commune")) return "Communes";
-        if(t.toLowerCase() === "date") return "Date";
-        if(t.toLowerCase().includes("temp")) return "Temp.";
-        if(t.toLowerCase().includes("cond")) return "Cond.";
-        if(t.toLowerCase().includes("turb")) return "Turbidité";
-        if(t.toLowerCase() === "ph") return "pH";
-        return null; // ignore others (Couleur, Salinité, TDS...)
-      };
-
-      // Convert Excel date to yyyy-mm-dd (or keep as string)
-      const toIsoDate = (v) => {
-        if(!v) return "";
-        // if already Date
-        if(Object.prototype.toString.call(v) === "[object Date]" && !isNaN(v)){
-          return v.toISOString().slice(0,10);
-        }
-        // if string
-        if(typeof v === "string"){
-          // accept yyyy-mm-dd
-          const m = v.match(/^(\d{4}-\d{2}-\d{2})/);
-          if(m) return m[1];
-          return v; // fallback
-        }
-        // number could be Excel date serial; attempt parse
-        if(typeof v === "number"){
-          const d = XLSX.SSF.parse_date_code(v);
-          if(d){
-            const yyyy = String(d.y).padStart(4,"0");
-            const mm = String(d.m).padStart(2,"0");
-            const dd = String(d.d).padStart(2,"0");
-            return `${yyyy}-${mm}-${dd}`;
-          }
-        }
-        return String(v);
-      };
-
-      const importSheet = async (sheetName, collectionName) => {
+      const importSheet = async (sheetName, collectionName)=>{
         const ws = wb.Sheets[sheetName];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:"" });
 
-        // Read as array of arrays so we can detect header row
-        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: "" });
-
-        // Find header row containing "N°=" in first cells (usually row index 1)
+        // find header row that contains N°=
         let headerRowIdx = -1;
-        for(let i=0; i<Math.min(10, aoa.length); i++){
-          const row = aoa[i] || [];
-          const joined = row.map(x=>String(x||"").trim());
-          if(joined.includes("N°=") || joined.includes("N°")){
-            headerRowIdx = i;
-            break;
-          }
+        for(let i=0; i<Math.min(15, aoa.length); i++){
+          const row = (aoa[i]||[]).map(x=>String(x||"").trim());
+          if(row.includes("N°=") || row.includes("N°")){ headerRowIdx = i; break; }
         }
-        if(headerRowIdx === -1) throw new Error(`Cannot find header row in sheet ${sheetName}`);
+        if(headerRowIdx === -1) throw new Error("Cannot find header row in sheet "+sheetName);
 
-        const headers = aoa[headerRowIdx].map(h => String(h||"").trim());
-        const colMap = headers.map(h => mapHeader(h));
+        const headers = (aoa[headerRowIdx]||[]).map(h=>String(h||"").trim());
+        const idxByHeader = new Map(headers.map((h,i)=>[h,i]));
 
-        // Build docs from rows after headerRowIdx
+        // Build docs
         const rows = [];
-        for(let r = headerRowIdx+1; r < aoa.length; r++){
+        for(let r = headerRowIdx+1; r<aoa.length; r++){
           const row = aoa[r] || [];
-          const idCell = row[0];
-          const id = String(idCell||"").trim();
-          if(!id) continue; // skip empty
-          // Accept only IDs like B1.. or T1..
-          if(!/^[BT]\d+$/i.test(id)) continue;
+          const rawId = row[idxByHeader.get("N°=") ?? 0];
+          const id = String(rawId||"").trim();
+          if(!id) continue;
 
-          const doc = { ID: id };
-          for(let c=0; c<colMap.length; c++){
-            const field = colMap[c];
-            if(!field || field==="ID") continue;
-            let v = row[c];
-            if(field==="Date") v = toIsoDate(v);
-            doc[field] = (v === null || v === undefined) ? "" : v;
+          // Accept IDs like B1 / T1, OR numeric like 1 (we convert based on sheet)
+          let finalId = id;
+          if(/^[0-9]+$/.test(id)){
+            finalId = (sheetName === "Brutes" ? "B" : "T") + id;
           }
-          // Normalize expected fields even if missing
-          for(const f of COLS){
-            if(f==="ID") continue;
-            if(doc[f] === undefined) doc[f] = "";
+          if(!/^[BT]\d+$/i.test(finalId)) continue;
+
+          const docRow = { ID: finalId };
+          for(const h of DISPLAY_HEADERS){
+            if(h === "N°=") continue;
+            const idx = idxByHeader.get(h);
+            if(idx === undefined) { docRow[h] = ""; continue; }
+            let v = row[idx];
+            if(h === "Date") v = toIsoDate(v);
+            docRow[h] = (v === null || v === undefined) ? "" : v;
           }
-          rows.push(doc);
+          rows.push(docRow);
         }
 
         setStatus(`استيراد ${sheetName}... (${rows.length})`);
-        // Write in batches of 400 to be safe
         const CHUNK = 400;
         for(let i=0; i<rows.length; i+=CHUNK){
           const batch = db.batch();
-          const chunk = rows.slice(i, i+CHUNK);
-          chunk.forEach(docRow => {
+          for(const docRow of rows.slice(i,i+CHUNK)){
             const id = docRow.ID;
             const payload = { ...docRow };
             delete payload.ID;
             payload.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-            batch.set(db.collection(collectionName).doc(id), payload, { merge: true });
-          });
+            batch.set(db.collection(collectionName).doc(id), payload, { merge:true });
+          }
           await batch.commit();
         }
       };
 
-      // Do import
-      await importSheet("Brutes", "brutes");
-      await importSheet("Traitées", "traitees");
+      await importSheet("Brutes","brutes");
+      await importSheet("Traitées","traitees");
 
       setStatus("تم الاستيراد ✅");
-      alert("تم استيراد ملف Excel ✅\nإذا كانت هناك بيانات قديمة بنفس ID سيتم تحديثها.");
+      alert("✅ تم استيراد ملف Excel بنجاح.\nإذا كانت بيانات قديمة بنفس ID سيتم تحديثها.");
     }catch(err){
       console.error(err);
       showErr("Import error:\n" + (err?.message || err));
@@ -459,7 +459,6 @@
       setStatus("فشل الاستيراد ❌");
     }
   });
-
 </script>
 </body>
 </html>
